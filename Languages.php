@@ -6,19 +6,6 @@ class Languages
 	public $project_name = 'PAB';
 	# Translations file name		(Required)	[String]
 	public $file_name = 'translations.json';
-	# OneSkyApp API					(Optional)	[Array]
-	public $oneskyapp = [
-		# API Key
-		'api-key'		=> "",
-		# Secret API Key
-		'secret'		=> "",
-		# Platform ID
-		'platform-id'	=> 168628,
-		# File name on the platform
-		'file_name'		=> 'en_strings.json',
-		# True: if you want to save the translations on translations file
-		'save_file'		=> 1
-	];
 	# The cache time				(Optional, Required for Redis) [false: no cache/int: time in seconds]
 	private $cache_time = 60 * 60 * 3;
 	# Default user language			(Required)	[String of language ID]
@@ -53,15 +40,14 @@ class Languages
 				$this->db->rdel($this->db->rkeys('tr-' . $this->project_name . '*'));
 				$this->db->rset('tr-' . $this->project_name . '-status', true, $this->cache_time);
 				foreach ($trs['result'] as $lang => $strings) {
-					$lang = explode('-', $lang, 2)[0];
 					foreach($strings as $stringn => $translation) {
 						$this->db->rset('tr-' . $this->project_name . '-' . $lang . '-' . $stringn, $translation, $this->cache_time);
 					}
 				}
-				return 1;
 			} else {
 				$this->db->rdel('tr-' . $this->project_name . '-status');
 			}
+			return 1;
 		}
 		return;
 	}
@@ -70,9 +56,9 @@ class Languages
 	public function reload () {
 		if (isset($this->db->configs) and $this->db->configs['redis']['status']) {
 			$this->db->rdel('tr-' . $this->project_name . '-status');
-			return $this->redisCheck();
+			$this->redisCheck();
 		}
-		return 0;
+		return 1;
 	}
 	
 	# Get the translation from string ID
@@ -87,7 +73,7 @@ class Languages
 			if ($lang !== 'en' and $t_string = $this->db->rget('tr-' . $this->project_name . '-' . $lang . '-' . $string)) {
 			} elseif ($t_string = $this->db->rget('tr-' . $this->project_name . '-en-' . $string)) {
 			} else {
-				$t_string = '👾';
+				$t_string = '👾: ' . $string;
 			}
 		} else {
 			if ($lang !== 'en' and $t_string = $this->translations[$lang][$string]) {
@@ -111,36 +97,6 @@ class Languages
 	public function getAllTranslations () {
 		if (isset($this->translations)) {
 			return ['ok' => 1, 'result' => $this->translations];
-		} elseif ($this->oneskyapp['platform-id']) {
-			date_default_timezone_set('GMT');
-			$time = time();
-			$args = [
-				'api-key'		=> $this->oneskyapp['api-key'],
-				'timestamp'		=> $time,
-				'dev-hash'		=> md5($time . $this->oneskyapp['secret'])
-			];
-			$args['platform-id'] = $this->oneskyapp['platform-id'];
-			$url = "http://api.oneskyapp.com/2/string/output?" . http_build_query($args);
-			if (!isset($this->curl)) $this->curl = curl_init();
-			curl_setopt_array($this->curl, [
-				CURLOPT_URL				=> $url,
-				CURLOPT_POST			=> 0,
-				CURLOPT_TIMEOUT			=> 2,
-				CURLOPT_RETURNTRANSFER	=> 1
-			]);
-			$r = json_decode(curl_exec($this->curl), 1);
-			if (isset($r['translation'])) {
-				if (isset($r['translation'][$this->oneskyapp['file_name']]) and !empty($r['translation'][$this->oneskyapp['file_name']])) {
-					if ($this->oneskyapp['save_file']) {
-						file_put_contents($this->file_name, json_encode($r['translation'][$this->oneskyapp['file_name']]));
-					}
-					return ['ok' => 1, 'result' => $r['translation'][$this->oneskyapp['file_name']]];
-				} else {
-					return ['ok' => 0, 'result' => [], 'notice' => 'File name not found'];
-				}
-			} else {
-				return ['ok' => 0, 'result'	=> $r];
-			}
 		} elseif (file_exists($this->file_name)) {
 			$file = file_get_contents($this->file_name);
 			if ($file) {
@@ -153,6 +109,23 @@ class Languages
 		} else {
 			return ['ok' => 1, 'result' => [], 'notice' => 'No configs for translations'];
 		}
+	}
+
+	public function save ($array1, $array2) {
+		$array = [];
+		foreach ($array1 as $lang => $strings) {
+			if (!is_array($array[$lang])) $array[$lang] = [];
+			foreach ($strings as $strName => $string) {
+				$array[$lang][$strName] = $string;
+			}
+		}
+		foreach ($array2 as $lang => $strings) {
+			if (!is_array($array[$lang])) $array[$lang] = [];
+			foreach ($strings as $strName => $string) {
+				$array[$lang][$strName] = $string;
+			}
+		}
+		return $array;
 	}
 }
 
